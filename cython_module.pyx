@@ -1,8 +1,8 @@
-from libc.math cimport sqrt, pow, exp,cos,sin, cosh, sinh, fabs,pi, atan
+from libc.math cimport sqrt, pow, exp,cos,sin, cosh, sinh, fabs,pi, atan, log, fabs
 cimport cython
 from cython.parallel cimport prange
 from libc.stdio cimport printf
-
+import tqdm
 import numpy as np
 import scipy.special as sc
 cimport scipy.special.cython_special as csc
@@ -16,6 +16,85 @@ def hello_world():
 @cython.wraparound(False)
 cdef void _hello_world_()nogil:
     printf('hello_world')
+
+
+def harmonic_force(g: float, time: np.ndarray,
+                   phase: float = 0., delta_indicator: bool = False) -> np.ndarray:
+    delta = float(int(delta_indicator)/(time[1]-time[0]))
+    force = np.zeros_like(time, dtype = 'float64')
+    max_iter = int(force.shape[0])
+    _harmonic_force_(g, phase, delta, time, force, max_iter)
+    return force
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _harmonic_force_(double g, double phase,
+                           double delta, double[:] time, double[:] force, int iter_max)nogil:
+    cdef int i
+    for i in prange(iter_max, nogil=True):
+        force[i] = g + amplitude_force(time[i]) * sin(frequency_force(time[i])* time[i] + phase)
+    force[0] = delta
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double amplitude_force(double time)nogil:
+    cdef double ret
+    ret = 5*cos(time/100)
+    return ret
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double frequency_force(double time)nogil:
+    cdef double ret
+    ret = log(fabs(time)+1.5)
+    return ret
+
+
+def right_side_for_harmonic_force(g, phase,time,K,M):
+    max_iter = 1000
+    freq = sqrt(K / M)
+    rs = np.zeros_like(time)
+    for i in tqdm.tqdm(range(1, time.shape[0])):
+        time_max = time[i]
+        tau = np.linspace(0,time_max, max_iter)
+        rs[i]=_right_side_for_harmonic_force_(g, phase, time_max, tau,max_iter, freq)*2/M
+        rs[i]+= 2*cos(freq*time_max)/M
+    return rs
+
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double _right_side_for_harmonic_force_(double g, double phase, double time, double[:] tau,
+                                          int max_iter, double freq)nogil:
+    cdef:
+        int i, j
+        double step_1, step_2, rs, step_time
+    rs = 0
+    step_time = tau[1]-tau[0]
+    for i in prange(1, max_iter, nogil=True):
+        step_1 = _integrand_(g, time, freq, phase, tau[i])
+        step_2 = _integrand_(g, time, freq, phase, tau[i-1])
+        rs += (step_1+step_2)/(2*step_time)
+    return rs
+
+
+
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double _integrand_(double g, double time_max,
+                        double freq_cos, double phase, double tau)nogil:
+    cdef double step
+    step = g + amplitude_force(tau) * sin(frequency_force(tau)* tau + phase)
+    step = step * cos(freq_cos*(time_max-tau))
+    return step
+
+
 
 
 def calc_v(t, v, ampl_v, a):
@@ -272,24 +351,30 @@ cdef void _calc_P0(double[:] t, double [:] outP0, double M,  double[:] v, double
     printf('*\n')
 
 
-def calc_P1(t, K1, M, v,g,j):
+def calc_P1(t, K1, M, v,force,j):
     outP0 = np.zeros_like(t, dtype='float64')
     #omega =np.zeros_like(t, dtype='float64')
     U =np.zeros_like(t, dtype='float64')
     O =np.zeros_like(t, dtype='float64')
-    _calc_P1(t, outP0, K1, M, v,g,j,U,O)
+    four_force= np.fft.fft(force)
+    absFp = np.abs(four_force)
+    argFp = np.angle(four_force)
+    _calc_P1(t, outP0, K1, M, v,force,j,absFp,argFp, U,O)
+
     return outP0
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _calc_P1(double[:] t, double [:] outP0, double K1, double M, double[:] v, double g, int j, double[:] U,double [:] omega) nogil:
+cdef void _calc_P1(double[:] t, double [:] outP0, double K1, double M, double[:] v, double[:] g,
+                                                                                            int j,
+                   double[:] absFp, double[:] argFp, double[:] U,double [:] omega) nogil:
     cdef int i,l
-    cdef double absFp, argFp,C,integ,O0
+    cdef double C,integ,O0
     l=len(t)//50
     O(omega,v,M,K1)
-    absFp=g/(omega[0])
-    argFp=pi/2
+    #absFp=g/(omega[0])
+    #argFp=pi/2
     C=sqrt(sqrt(1.-v[0]*v[0]-omega[0]*omega[0])/(omega[0]*(1.+M*sqrt(1.-v[0]**2-omega[0]*omega[0]) )))
     printf('\n Calculate Analityc, C= %f\n',C);    printf('___________________________________________________\n')
     i=0
@@ -300,9 +385,10 @@ cdef void _calc_P1(double[:] t, double [:] outP0, double K1, double M, double[:]
             integ=integral(omega, i, t[i]-t[i-1])
         else:
             integ=integral_O_M_eq_0(v[0],t[i],v[i],v[i-1],i,t[i+1]-t[i],K1)
-        O0=K1*g/(2.*sqrt(1.-v[i]**2)+K1)
-        U[i]=C*sqrt(sqrt(1.-v[i]*v[i]-omega[i]*omega[i])/(omega[i]*(1.+M*sqrt(1.-v[i]*v[i]-omega[i]*omega[i]))))*(M*omega[i]*omega[i]-K1)
-        outP0[i]=g-O0+U[i]*absFp*sin(integ-argFp)
+        O0=K1*g[i]/(2.*sqrt(1.-v[i]**2)+K1)
+        U[i]=C*sqrt(sqrt(1.-v[i]*v[i]-omega[i]*omega[i])/
+                    (omega[i]*(1.+M*sqrt(1.-v[i]*v[i]-omega[i]*omega[i]))))*(M*omega[i]*omega[i]-K1)
+        outP0[i]=g[i]-O0+U[i]*absFp[i]*sin(integ-argFp[i])
 
     printf('*\n')
 

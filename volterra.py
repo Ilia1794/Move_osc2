@@ -1,8 +1,8 @@
 import numpy as np
 import scipy.linalg as la
-
+import tqdm
 from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matrices_0, calc_P1, \
-    calc_P2, calc_p0
+    calc_P2, calc_p0, harmonic_force, right_side_for_harmonic_force
 
 
 def params():
@@ -35,9 +35,11 @@ def volterra_compute():
     #    Matr0 = np.zeros_like(t, dtype='float64')
     #    p0 = np.zeros_like(t, dtype='float64')
     Matr = calc_matrices_1(t, K1, M1, v_a, h)
-    p = calc_p1(t, K1, M1, g)
+    #p = calc_p1(t, K1, M1, g)
+    p = right_side_for_harmonic_force(g, 0, t, K1, M1)
+    force = harmonic_force(g, t, 0, True)
     #P0 = calc_P0(t, M1, v_a, g, j)
-    P1 = calc_P1(t, K1, M1, v_a, g, j)
+    P1 = calc_P1(t, K1, M1, v_a, force, j)
     #P2 = calc_P2(t, K1, M1, v_a, g, j)
     sol = la.solve_triangular(Matr, p, 0, True, False, False, None, False)
     #if M1 != 0:
