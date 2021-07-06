@@ -1,8 +1,10 @@
 import numpy as np
 import scipy.linalg as la
 import tqdm
+import scipy.integrate as integrate
+from cmath import sqrt, cos,sin, cosh, sinh
 from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matrices_0, calc_P1, \
-    calc_P2, calc_p0, harmonic_force, right_side_for_harmonic_force
+    calc_P2, calc_p0, harmonic_force, right_side_for_harmonic_force, integrand
 
 
 def params():
@@ -10,10 +12,10 @@ def params():
     K1 = 1.5
     a = 0.01
     v = -0.5
-    T = 350
-    h1 = 25000
+    T = 150
+    h1 = 15000
     g = 5.
-    M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
+    #M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g
 
 
@@ -28,26 +30,34 @@ def volterra_compute():
         print(f" v^2={v * v}; a={a}; K= {K1}; M={M1}\n  v^2<={1 - K1 * K1 / 4}")
     else:
         print(f" v^2={v * v}; a={a}; K= {K1}; M={M1}\n v^2<{1 - K1 / (M1)}")
-    #if M1 != 0:
-    #    Matr0 = calc_matrices_0(t, M1, v_a, h)
-    #    p0 = calc_p1(t, 0, M1, g)
-    #else:
-    #    Matr0 = np.zeros_like(t, dtype='float64')
-    #    p0 = np.zeros_like(t, dtype='float64')
     Matr = calc_matrices_1(t, K1, M1, v_a, h)
-    #p = calc_p1(t, K1, M1, g)
     p = right_side_for_harmonic_force(g, 0, t, K1, M1)
+    print(p)
     force = harmonic_force(g, t, 0, True)
-    #P0 = calc_P0(t, M1, v_a, g, j)
     P1 = calc_P1(t, K1, M1, v_a, force, j)
-    #P2 = calc_P2(t, K1, M1, v_a, g, j)
     sol = la.solve_triangular(Matr, p, 0, True, False, False, None, False)
-    #if M1 != 0:
-    #    sol0 = la.solve_triangular(Matr0, p0, 0, True, False, False, None, False)
-    #else:
-    #    sol0 = np.zeros_like(t, dtype='float64')
-    return t, sol, P1
+    return t, sol, P1, p, force
 
+
+def right_side_for_harmonic_force_1(g, phase, time, K, M):
+    max_iter = 10000
+    freq = np.sqrt(K / M)
+    rs = np.zeros_like(time)
+    #for i in tqdm.tqdm(range(1, time.shape[0])):
+    for i in range(1, time.shape[0]):
+        time_max = time[i]
+        #tau = np.linspace(0,time_max, max_iter)
+        #intag = np.zeros(max_iter, dtype='float64')
+        print(f'g= {g}, time_max={time_max}, freq={freq}, phase={phase}')
+        print(f'Types g= {type(g)}, time_max={type(time_max)}, freq={type(freq)}, phase={type(phase)}')
+        res = integrate.quad(lambda x: integrand(g, time_max, freq, phase, x), 0., float(time_max))
+        print(res)
+        rs[i] = res[0]
+        #rs[i]=_right_side_for_harmonic_force_(g, phase, time_max, tau,max_iter, freq, intag)*2/M+\
+        #      2 * cos(freq * time_max) / M
+        rs[i]+= cos(freq*time_max)
+        rs[i] *= 2/M
+    return rs
 
 
 

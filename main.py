@@ -1,6 +1,6 @@
 import os
 import shutil
-
+import numpy as np
 import pyximport
 
 pyximport.install()
@@ -11,9 +11,12 @@ from volterra import volterra_compute
 
 
 def main():
-    hello_world()
-    abscissa, data_first, data_second = volterra_compute()
-    plot_two_lines(abscissa, data_first, data_second)
+    abscissa, numeric, analytic, p, force = volterra_compute()
+    plot_two_lines(abscissa, numeric, analytic, 'Force', 't', 'P', 'Numeric', 'Analytic')
+    plot_two_lines(abscissa, p, force, 'Force_external', 't', 'Force', 'p', 'force')
+    plot_two_lines(abscissa, np.abs(np.fft.fft(force)), np.angle(np.fft.fft(force)),
+                   'Force_abs_angle', 't', 'Force', 'abs',
+                   'angle')
 
 
 def initial_fold(fold_name: str = 'Plots') -> None:

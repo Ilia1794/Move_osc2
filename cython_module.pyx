@@ -1,10 +1,11 @@
-from libc.math cimport sqrt, pow, exp,cos,sin, cosh, sinh, fabs,pi, atan, log, fabs
+from libc.math cimport sqrt, pow, exp,cos,sin, cosh, sinh, fabs,pi, atan, log
 cimport cython
 from cython.parallel cimport prange
 from libc.stdio cimport printf
 import tqdm
 import numpy as np
 import scipy.special as sc
+import scipy
 cimport scipy.special.cython_special as csc
 
 
@@ -40,28 +41,31 @@ cdef void _harmonic_force_(double g, double phase,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double amplitude_force(double time)nogil:
-    cdef double ret
-    ret = 5*cos(time/100)
-    return ret
+    return 1#log(fabs(time) + 1.5)
+
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double frequency_force(double time)nogil:
-    cdef double ret
-    ret = log(fabs(time)+1.5)
-    return ret
+    return 5 #* cos(time / 100)
 
 
 def right_side_for_harmonic_force(g, phase,time,K,M):
-    max_iter = 1000
+    max_iter = 10000
     freq = sqrt(K / M)
+    print(f'freq= {freq}')
     rs = np.zeros_like(time)
     for i in tqdm.tqdm(range(1, time.shape[0])):
         time_max = time[i]
         tau = np.linspace(0,time_max, max_iter)
-        rs[i]=_right_side_for_harmonic_force_(g, phase, time_max, tau,max_iter, freq)*2/M
-        rs[i]+= 2*cos(freq*time_max)/M
+        intag = np.zeros(max_iter, dtype='float64')
+        #rs[i] = scipy.integrate.quad(lambda x :_integrand_(g, time_max, freq, phase, x), 0.,
+        #                            time_max)[0]
+        rs[i]=_right_side_for_harmonic_force_(g, phase, time_max, tau,max_iter, freq, intag)
+        rs[i] += g * sin(freq * time_max) / freq
+        rs[i]+= cos(freq*time_max)
+        rs[i] *= 2/M
     return rs
 
 
@@ -69,28 +73,42 @@ def right_side_for_harmonic_force(g, phase,time,K,M):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef double _right_side_for_harmonic_force_(double g, double phase, double time, double[:] tau,
-                                          int max_iter, double freq)nogil:
+                                          int max_iter, double freq, double[:] rs)nogil:
     cdef:
         int i, j
-        double step_1, step_2, rs, step_time
-    rs = 0
+        double step_1, step_2,  step_time, ret
+    #rs = 0
+    step_1 = 0.
+    step_2 = 0.
     step_time = tau[1]-tau[0]
+    #step_2 = _integrand_(g, time, freq, phase, tau[0])
     for i in prange(1, max_iter, nogil=True):
-        step_1 = _integrand_(g, time, freq, phase, tau[i])
         step_2 = _integrand_(g, time, freq, phase, tau[i-1])
-        rs += (step_1+step_2)/(2*step_time)
-    return rs
+        step_1 = _integrand_(g, time, freq, phase, tau[i])
+        step_time = tau[i] - tau[i-1]
+        rs[i] =(step_1+step_2)*step_time/2
+        step_2 = 0.#step_1
+        step_1 = 0.
+    step_1 = 0.
+    step_2 = 0.
+    ret = 0
+    i=1
+    for i in prange(1, max_iter, nogil=True):
+        ret += rs[i]
+    return ret#rs
 
 
-
+def integrand(g, time, freq, phase, tau):
+    _integrand_(g, time, freq, phase, tau)
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef double _integrand_(double g, double time_max,
-                        double freq_cos, double phase, double tau)nogil:
+cdef double _integrand_(double g, double time_max, double freq_cos, double phase, double tau)nogil:
     cdef double step
-    step = g + amplitude_force(tau) * sin(frequency_force(tau)* tau + phase)
+    step = 0.
+    #step = g + amplitude_force(tau) * sin(frequency_force(tau)* tau + phase)
+    step = amplitude_force(tau) * sin(frequency_force(tau)* tau + phase)
     step = step * cos(freq_cos*(time_max-tau))
     return step
 
