@@ -10,12 +10,12 @@ from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matric
 def params():
     M1 = 5.
     K1 = 1.5
-    a = 0.#01
-    v = 0#.5
+    a = 0.01
+    v = -0.5
     T = 150
-    h1 = 25000
+    h1 = 55000
     g = 10.
-    freq = 0.05
+    freq = 50
     amplitude = 5
     phase = 0#pi/2
     #M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
@@ -37,12 +37,12 @@ def volterra_compute():
     p = right_side_for_harmonic_force(g, phase, freq, amplitude, t, K1, M1, h1)
     print(p)
     force = harmonic_force(g, t, phase, True, freq, amplitude)
-    P = calc_P(t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
+    P, absFp, argFp = calc_P(t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
     P1 = calc_P1(t, K1, M1, v_a, g, j)
     P2 = calc_P2(t, K1, M1, v_a, g, j)
     print(P1)
     sol = la.solve_triangular(Matr, p, 0, True, False, False, None, False)
-    return t, sol, P, p, force, P1, P2
+    return t, sol, P, p, force, P1, P2,absFp, argFp
 
 
 def right_side_for_harmonic_force_1(g, phase, time, K, M):

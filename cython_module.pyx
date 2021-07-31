@@ -4,9 +4,12 @@ from cython.parallel cimport prange
 from libc.stdio cimport printf
 import tqdm
 import numpy as np
-import scipy.special as sc
-import scipy
+#import scipy.special as sc
+#import scipy
 cimport scipy.special.cython_special as csc
+
+
+#!-*-coding: utf-8 -*-
 
 
 def hello_world():
@@ -16,7 +19,7 @@ def hello_world():
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _hello_world_()nogil:
-    printf('hello_world')
+    printf("hello_world")
 
 
 def harmonic_force(g: float, time: np.ndarray, phase: float = 0., delta_indicator: bool = False,
@@ -80,7 +83,7 @@ cdef double integrated_expression(double A, double bar_omega, double K, double M
         double term_1, term_2, KM, numerator_1, numerator_2, denominator_1, denominator_2
     KM = sqrt(K/M)
     denominator_1 = bar_omega+KM
-    denominator_2 = 2*(bar_omega-KM)
+    denominator_2 = (bar_omega-KM)#*2
     numerator_1 = sin(0.5*(bar_omega+KM)*t)*sin(0.5*(bar_omega+KM-2)*t+phi)
     #numerator_2 = cos(phi+t) - cos((bar_omega-KM+1)*t+phi)
     numerator_2 = sin(0.5*(bar_omega-KM)*t)*sin(0.5*(bar_omega-KM+2)*t+phi)
@@ -441,19 +444,19 @@ def calc_P(t: np.ndarray, K: float, M: float, v: np.ndarray, force: np.ndarray, 
     O_new(O, v*v, M, K)
     print(f'O(0)={O[0]}')
     #ff = fourier_force(10, omega[0], ampl=0, freq=0, phase=0, t[1]-t[0])
-    ff = fourier_force(g, O[0], amplitude, freq, phase, t[1]-t[0])
-    ff_abs, ff_arg = abs_arg(ff)
-    print(f'ff={ff}, |ff| = {np.abs(ff)}, arg(ff) = {np.angle(ff)},\nfrom func ff_abs={ff_abs}, '
-          f'ff_arg={ff_arg}')
-    f_force = np.zeros_like(t, dtype='float64') + force
-    f_force[0] = f_force[1]
-    four_force= np.fft.fft(f_force)
-    absFp = np.zeros_like(force) + np.abs(ff*sqrt(2*pi) ) #10  # np.abs(four_force)
-    argFp = np.zeros_like(force) - np.angle(ff*sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
+    absFp = np.zeros_like(force)
+    argFp = np.zeros_like(force)
+    for i in range(t.shape[0]):
+        ff = fourier_force(g, O[i], amplitude, freq, phase, t[1]-t[0])
+        ff_abs, ff_arg = abs_arg(ff)
+        absFp[i] = np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
+        argFp[i] = np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
+    #absFp = np.zeros_like(force) + np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
+    #argFp = np.zeros_like(force) - np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
     #absFp = np.abs(four_force)
     #argFp = np.angle(four_force) - pi/2  #+ pi/4#
     _calc_P(t, return_force, K, M, v*v,force,j,absFp,argFp, U,O, amplitude, freq, phase)
-    return return_force
+    return return_force, absFp, argFp
 
 
 @cython.boundscheck(False)
@@ -510,10 +513,10 @@ cdef void _calc_P(double[:] t, double [:] outP0, double K, double M, double[:] v
         integ_omega = integral(omega, i, t[i]-t[i-1])
         F_p = fourier_force(g, omega[i], amplitude, freq, phase, t[1] - t[0])
         absFp_old, argFp_old = abs_arg(F_p)
-        outP0[i] = step_cicle_for_force(omega[i], K, M, p[i], v_sq[i], absFp_old, argFp_old, C,
-                                        integ_omega)
-        #outP0[i] = step_cicle_for_force(omega[i], K, M, p[i], v_sq[i], absFp[i], argFp[i], C,
+        #outP0[i] = step_cicle_for_force(omega[i], K, M, p[i], v_sq[i], absFp_old, argFp_old, C,
         #                                integ_omega)
+        outP0[i] = step_cicle_for_force(omega[i], K, M, p[i], v_sq[i], absFp[i], argFp[i], C,
+                                        integ_omega)
     #cicle_for_force(t.shape[0], l, omega, t, K, M, p, v_sq, absFp, argFp, C, outP0)
     """for i in prange(t.shape[0], nogil=True):
         if (i%l)==0:
@@ -591,9 +594,9 @@ cdef void cicle_for_force(int max_iter, int l, double[:] omega, double[:] t, dou
         integ_omega = integral(omega, i, t[i]-t[i-1])
         term_2 = K*p[i] / (2. * sqrt(1. - v_sq[i]) + K)
         multiplier_1 =  sqrt(
-            (M*omega[i]*omega[i]-K)/
-            (omega[i]*(M*M*omega[i]*omega[i]-K*M+2))
-        )*(M*omega[i]*omega[i]-K)
+                                (M*omega[i]*omega[i]-K)/
+                                (omega[i]*(M*M*omega[i]*omega[i]-K*M+2))
+                            )*(M*omega[i]*omega[i]-K)
         #multiplier_1 = sqrt(
         #                   (M*omega[i]**2 - K) / \
         #                   omega[i]*(M*M * omega[i]*omega[i] - K*M + 2.)
