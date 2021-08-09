@@ -4,18 +4,18 @@ import tqdm
 import scipy.integrate as integrate
 from cmath import sqrt, cos, sin, cosh, sinh, pi
 from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matrices_0, calc_P1, \
-    calc_P, calc_p0, harmonic_force, right_side_for_harmonic_force, integrand, calc_P2
+    calc_P, calc_p0, harmonic_force, right_side_for_harmonic_force, integrand, calc_P2, SystemUnderStudy
 
 
 def params():
     M1 = 5.
     K1 = 1.5
-    a = 0.01
-    v = -0.5
+    a = 0#.01
+    v = -0#.5
     T = 150
-    h1 = 55000
+    h1 = 15000
     g = 10.
-    freq = 50
+    freq = 0.05
     amplitude = 5
     phase = 0#pi/2
     #M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
@@ -24,6 +24,7 @@ def params():
 
 def volterra_compute():
     M1, K1, a, v, T, h1, g, freq, amplitude, phase = params()
+    syst = SystemUnderStudy(M1, K1, a, v, T, h1, g, freq, amplitude, phase)
     ampl_v = 1
     j = 1
     h = T / h1
@@ -37,7 +38,7 @@ def volterra_compute():
     p = right_side_for_harmonic_force(g, phase, freq, amplitude, t, K1, M1, h1)
     print(p)
     force = harmonic_force(g, t, phase, True, freq, amplitude)
-    P, absFp, argFp = calc_P(t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
+    P, absFp, argFp = calc_P(syst, t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
     P1 = calc_P1(t, K1, M1, v_a, g, j)
     P2 = calc_P2(t, K1, M1, v_a, g, j)
     print(P1)

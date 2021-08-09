@@ -10,6 +10,83 @@ cimport scipy.special.cython_special as csc
 
 
 #!-*-coding: utf-8 -*-
+cdef class SystemUnderStudy(object):
+    cdef public:
+        double M, K, a, v, T, h, g, freq, ampl, phase
+    def __init__(self, M1, K1, a1, v11, T1, h1, g1, freq1, amplitude1, phase1):
+        self.M = M1
+        self.K = K1
+        self.a = a1
+        self.v = v11
+        self.T = T1
+        self.h = h1
+        self.g = g1
+        self.freq = freq1
+        self.ampl = amplitude1
+        self.phase = phase1
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double ext_force(self, double tau)nogil:
+        cdef double term_1, term_2, term_3, delta
+        term_1 = 0
+        if tau == 0:
+            term_1 = self.h/self.T
+        term_2 = 0
+        term_3 = 0
+        if tau >=0 :
+            term_2 = self.g
+            term_3 = self.ampl * sin(self.freq*tau + self.freq)
+        return term_1+term_2+term_3
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double d_ext_force(self, double tau)nogil:
+        cdef double term_1, term_2, delta
+        term_1 = 0
+        term_2 = 0
+        if tau == 0:
+            delta = self.h/self.T
+            term_1 = (self.g + self.ampl*sin(self.phase))*delta
+        if tau>=0:
+            term_2 = self.ampl*self.freq*cos(self.freq*tau+self.phase)
+        return term_1+term_2
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double d2_ext_force(self, double tau)nogil:
+        cdef double term_1, term_2, delta
+        term_1 = 0
+        term_2 = 0
+        if tau == 0:
+            delta = self.h / self.T
+            term_1 =  self.ampl * self.freq * cos(self.phase) * delta
+        if tau >= 0:
+            term_2 = -self.ampl * (self.freq**2) * sin(self.freq * tau + self.phase)
+        return term_1 + term_2
+"""
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double velocity(self, tau)nogil:
+        cdef double vel
+        vel = self.v + self.a*tau
+        return vel
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double d_velocity(self, tau)nogil:
+        cdef double vel
+        vel = self.a
+        return vel
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double d2_velocity(self, tau)nogil:
+        cdef double vel
+        vel = 0.
+        return vel
+"""
+
 
 
 def hello_world():
@@ -435,7 +512,7 @@ cdef void _calc_P1(double[:] t, double [:] outP0, double K, double M, double[:] 
     printf('*\n')
 
 
-def calc_P(t: np.ndarray, K: float, M: float, v: np.ndarray, force: np.ndarray, j: int, freq: float,
+def calc_P(syst: SystemUnderStudy, t: np.ndarray, K: float, M: float, v: np.ndarray, force: np.ndarray, j: int, freq: float,
            amplitude: float, phase: float, g: float) -> np.ndarray:
     return_force = np.zeros_like(t, dtype='float64')
     #omega =np.zeros_like(t, dtype='float64')
@@ -444,18 +521,18 @@ def calc_P(t: np.ndarray, K: float, M: float, v: np.ndarray, force: np.ndarray, 
     O_new(O, v*v, M, K)
     print(f'O(0)={O[0]}')
     #ff = fourier_force(10, omega[0], ampl=0, freq=0, phase=0, t[1]-t[0])
-    absFp = np.zeros_like(force)
-    argFp = np.zeros_like(force)
-    for i in range(t.shape[0]):
-        ff = fourier_force(g, O[i], amplitude, freq, phase, t[1]-t[0])
-        ff_abs, ff_arg = abs_arg(ff)
-        absFp[i] = np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
-        argFp[i] = np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
+    absFp = np.zeros_like(force) + g /O[0]
+    argFp = np.zeros_like(force) + pi/2
+    #for i in range(t.shape[0]):
+    #    ff = fourier_force(g, O[i], amplitude, freq, phase, t[1]-t[0])
+    #    ff_abs, ff_arg = abs_arg(ff)
+    #    absFp[i] = np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
+    #    argFp[i] = np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
     #absFp = np.zeros_like(force) + np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
     #argFp = np.zeros_like(force) - np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
     #absFp = np.abs(four_force)
     #argFp = np.angle(four_force) - pi/2  #+ pi/4#
-    _calc_P(t, return_force, K, M, v*v,force,j,absFp,argFp, U,O, amplitude, freq, phase)
+    _calc_P(syst, t, return_force, K, M, v*v,force,j,absFp,argFp, U,O, amplitude, freq, phase)
     return return_force, absFp, argFp
 
 
@@ -472,7 +549,7 @@ cdef (double, double) abs_arg(double complex f)nogil:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _calc_P(double[:] t, double [:] outP0, double K, double M, double[:] v_sq, double[:] p,
+cdef void _calc_P(SystemUnderStudy syst,double[:] t, double [:] outP0, double K, double M, double[:] v_sq, double[:] p,
                                                                                             int j,
                    double[:] absFp, double[:] argFp, double[:] U,double [:] omega,
                   double amplitude, double freq, double phase) nogil:
@@ -515,8 +592,8 @@ cdef void _calc_P(double[:] t, double [:] outP0, double K, double M, double[:] v
         absFp_old, argFp_old = abs_arg(F_p)
         #outP0[i] = step_cicle_for_force(omega[i], K, M, p[i], v_sq[i], absFp_old, argFp_old, C,
         #                                integ_omega)
-        outP0[i] = step_cicle_for_force(omega[i], K, M, p[i], v_sq[i], absFp[i], argFp[i], C,
-                                        integ_omega)
+        outP0[i] = step_cicle_for_force(syst, omega[i], K, M, p[i], v_sq[i], absFp[i], argFp[i], C,
+                                        integ_omega, t[i])
     #cicle_for_force(t.shape[0], l, omega, t, K, M, p, v_sq, absFp, argFp, C, outP0)
     """for i in prange(t.shape[0], nogil=True):
         if (i%l)==0:
@@ -539,20 +616,39 @@ cdef void _calc_P(double[:] t, double [:] outP0, double K, double M, double[:] v
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef double step_cicle_for_force(double omega, double K, double M, double p, double v_sq,
-                                 double absFp, double argFp, double C, double integ_omega)nogil:
+cdef double step_cicle_for_force(SystemUnderStudy syst, double omega, double K, double M, double p, double v_sq,
+                                 double absFp, double argFp, double C, double integ_omega, double time)nogil:
     cdef:
         int i
-        double term_2, term_3, multiplier_1, multiplier_2, outP0
-    term_2 = K*p / (2. * sqrt(1. - v_sq) + K)
+        double term_2, term_3, multiplier_1, multiplier_2, outP0,z_fr_f, p1
+    p1 = syst.ext_force(time)
+    term_2 = K*p1 / (2. * sqrt(1. - v_sq) + K)
+    z_fr_f = zero_freq_force(syst, time)
     multiplier_1 =  sqrt(
             (M*omega*omega-K)/
             (omega*(M*M*omega*omega-K*M+2))
         )*(M*omega*omega-K)
     multiplier_2 = sin(integ_omega + argFp)
     term_3 = C * multiplier_1 * multiplier_2 * absFp
-    outP0 = p - term_2 - term_3
+    outP0 = p1 - term_2 - term_3 - M*z_fr_f
     return outP0
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double zero_freq_force(SystemUnderStudy syst, double time)nogil:
+    cdef double term_1, term_2, term_3, term_4, term_5, zn_1, zn_2
+    zn_1 = sqrt(1-syst.v**2)
+    zn_2 = 2*sqrt(1-syst.v**2)+syst.K
+    term_1 = syst.d2_ext_force(time)/zn_2
+    term_2 = 4*(syst.v+syst.a*time)*syst.a*syst.d_ext_force(time)/(zn_1*zn_2**2)
+    term_3 = syst.ext_force(time)*(0.+ 2*syst.a**2)/(zn_1*(zn_2**2))
+    term_4 = syst.ext_force(time)*(syst.v+syst.a*time)*2*syst.a**2/((zn_1**3)*(zn_2**2))
+    term_5 = syst.ext_force(time)*((syst.v+syst.a*time)**2)*8*syst.a**2/((zn_1**2)*(zn_2**3))
+    return term_1#+term_2+term_3+term_4+term_5
+
+
+
 
 
 @cython.boundscheck(False)
@@ -698,9 +794,6 @@ def calc_p2(t,K1,M,g):
     _calc_p2(t, out, K1, M,g)
     return out
 '''
-
-
-
 
 
 

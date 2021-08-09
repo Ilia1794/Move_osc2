@@ -51,8 +51,9 @@ def initial_fold(fold_name: str = 'Plots') -> None:
     if not os.path.exists(fold_name):
         os.mkdir(fold_name)
     else:
-        shutil.rmtree(fold_name)
-        os.mkdir(fold_name)
+        pass
+        #shutil.rmtree(fold_name)
+        #os.mkdir(fold_name)
 
 
 if __name__ == '__main__':

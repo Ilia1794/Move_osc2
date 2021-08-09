@@ -7,13 +7,18 @@ def plot_two_lines(data_for_abscissa: np.ndarray, data_first: np.ndarray, data_s
                    name_plots: str = 'Plots', name_x: str = 'x', name_y: str = 'Force',
                    name_first: str = 'data_first', name_second: str = 'data_second', mod_iter:
                    int = 10) -> None:
-    absc = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
-    data_1 = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
-    data_2 = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
-    for i in range(data_for_abscissa.shape[0]//10):
-        absc[i] = data_for_abscissa[i*10]
-        data_1[i] = data_first[i*10]
-        data_2[i] = data_second[i*10]
+    raref = 10
+    #absc = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
+    absc = np.zeros((data_for_abscissa.shape[0]//raref), dtype='float64')
+    #data_1 = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
+    data_1 = np.zeros((data_for_abscissa.shape[0]//raref), dtype='float64')
+    #data_2 = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
+    data_2 = np.zeros((data_for_abscissa.shape[0]//raref), dtype='float64')
+    #for i in range(data_for_abscissa.shape[0]//10):
+    for i in range(data_for_abscissa.shape[0]//raref):
+        absc[i] = data_for_abscissa[i*raref]
+        data_1[i] = data_first[i*raref]
+        data_2[i] = data_second[i*raref]
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=absc, y=data_1, mode='lines+markers', name=name_first))
     #    go.Scatter(x=data_for_abscissa, y=data_first, mode='lines+markers', name=name_first))
@@ -35,4 +40,4 @@ def plot_two_lines(data_for_abscissa: np.ndarray, data_first: np.ndarray, data_s
             linestyle=':', linewidth=0.3)
     plt.legend(loc='best')
     plt.savefig(f"Plots/{name_plots}.pdf")
-    plt.show(block = False)
+    plt.show(block = True)#False)
