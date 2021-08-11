@@ -8,15 +8,15 @@ from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matric
 
 
 def params():
-    M1 = 5.
-    K1 = 1.5
-    a = 0#.01
-    v = -0#.5
+    M1 = 10.
+    K1 = -0.5
+    a = 0.01
+    v = 0.5
     T = 150
     h1 = 15000
     g = 10.
-    freq = 0.05
-    amplitude = 5
+    freq = 0.#05
+    amplitude = 0#5
     phase = 0#pi/2
     #M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g, freq, amplitude, phase
@@ -35,9 +35,13 @@ def volterra_compute():
     else:
         print(f" v^2={v * v}; a={a}; K= {K1}; M={M1}\n v^2<{1 - K1 / (M1)}")
     Matr = calc_matrices_1(t, K1, M1, v_a, h)
-    p = right_side_for_harmonic_force(g, phase, freq, amplitude, t, K1, M1, h1)
-    print(p)
     force = harmonic_force(g, t, phase, True, freq, amplitude)
+    if M1 != 0:
+        p = right_side_for_harmonic_force(g, phase, freq, amplitude, t, K1, M1, h1)
+    else:
+        p = force
+    print(p)
+
     P, absFp, argFp = calc_P(syst, t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
     P1 = calc_P1(t, K1, M1, v_a, g, j)
     P2 = calc_P2(t, K1, M1, v_a, g, j)
