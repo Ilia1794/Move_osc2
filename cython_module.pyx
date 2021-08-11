@@ -198,16 +198,15 @@ cdef void positive_K(double[:] rs, double[:] time, int max_iter,double amplitude
 cdef double integrated_expression_positive(double A, double bar_omega, double K, double M, double t,
                                            double phi)nogil:
     cdef:
-        double term_1, term_2, KM, numerator_1, numerator_2, denominator_1, denominator_2
-    KM = sqrt(K/M)
-    denominator_1 = bar_omega+KM
-    denominator_2 = (bar_omega-KM)#*2
-    numerator_1 = sin(0.5*(bar_omega+KM)*t)*sin(0.5*(bar_omega+KM-2)*t+phi)
-    #numerator_2 = cos(phi+t) - cos((bar_omega-KM+1)*t+phi)
-    numerator_2 = sin(0.5*(bar_omega-KM)*t)*sin(0.5*(bar_omega-KM+2)*t+phi)
-    term_1 = A*numerator_1/denominator_1
-    term_2 = A*numerator_2/denominator_2
-    return term_1+term_2
+        double term_1, term_2, KM, denominator, term_3
+    KM = sqrt(K / M)
+    denominator = bar_omega ** 2 - KM ** 2
+
+    term_1 = bar_omega * cos(phi) * cos(KM * t)
+    term_2 = -bar_omega * cos(bar_omega * t + phi)
+    term_3 = KM * sin(phi) * sin(KM * t)
+
+    return A * (term_1 + term_2 + term_3) / denominator
 
 
 @cython.boundscheck(False)
@@ -613,11 +612,9 @@ cdef void _calc_P(SystemUnderStudy syst, double[:] t, double [:] outP0, double K
     omega_0 = omega[0]
     v_sq_0 = v_sq[0]
     C1 = sqrt(
-        omega_0 * (1 - v_sq_0 - omega_0**2) * (M*M*omega_0**2 - K*M + 2)
-    )#/omega_0
-    C2 = omega_0 * sqrt( M*omega_0**2 - K )*(
-        1 + M * sqrt( 1 - v_sq_0 - omega_0**2 )
-    )
+              omega_0 * (1 - v_sq_0 - omega_0**2) * (M*M*omega_0**2 - K*M + 2)
+             )
+    C2 = omega_0 * sqrt( M*omega_0**2 - K )*(1 + M * sqrt( 1 - v_sq_0 - omega_0**2))
     C = C1 / C2
     printf('\n Calculate Analityc, C= %f, C_old= %f, C2= %f, v^2= %f\n',C, C_old,
            M * sqrt( 1 - v_sq_0 - omega_0**2), v_sq_0)
@@ -652,7 +649,7 @@ cdef double step_cicle_for_force(SystemUnderStudy syst, double omega, double K, 
         )*(M*omega*omega-K)
     multiplier_2 = sin(integ_omega + argFp)
     term_3 = C * multiplier_1 * multiplier_2 * absFp
-    outP0 = p1 - term_2 - term_3 - M*z_fr_f
+    outP0 = p1 - term_2 - term_3 + M*z_fr_f
     return outP0
 
 

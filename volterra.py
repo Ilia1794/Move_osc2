@@ -9,16 +9,16 @@ from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matric
 
 def params():
     M1 = 10.
-    K1 = -0.5
+    K1 = 1.5
     a = 0.01
-    v = 0.5
+    v = 0.
     T = 150
-    h1 = 15000
+    h1 = 25000
     g = 10.
-    freq = 0.#05
-    amplitude = 0#5
-    phase = 0#pi/2
-    #M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
+    freq = 0.10
+    amplitude = 5
+    phase = 0  # pi/2
+    M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g, freq, amplitude, phase
 
 
