@@ -7,7 +7,7 @@ import numpy as np
 #import scipy.special as sc
 #import scipy
 cimport scipy.special.cython_special as csc
-
+from c_module cimport Bessel_c, summand_c, integral_c
 
 #!-*-coding: utf-8 -*-
 cdef class SystemUnderStudy(object):
@@ -36,7 +36,7 @@ cdef class SystemUnderStudy(object):
         term_3 = 0
         if tau >=0 :
             term_2 = self.g
-            term_3 = self.ampl * sin(self.freq*tau + self.freq)
+            term_3 = self.ampl * sin(self.freq*tau + self.phase)
         return term_1+term_2+term_3
 
     @cython.boundscheck(False)
@@ -114,10 +114,20 @@ cdef void _harmonic_force_(double g, double phase,
                            double delta, double[:] time, double[:] force, double freq,
                            double amplitude, int iter_max)nogil:
     cdef int i
+    cdef double term_1, term_2, term_3
     for i in prange(iter_max, nogil=True):
-        force[i] =g + amplitude_force(time[i], amplitude) * sin(frequency_force(time[i], freq
-                                                                                )* time[i] + phase)
-    force[0] += delta
+
+        term_1 = 0
+        if time[i] == 0:
+            term_1 = delta
+        term_2 = 0
+        term_3 = 0
+        if time[i] >= 0:
+            term_2 = g
+            term_3 = amplitude * sin(freq * time[i] + phase)
+
+        force[i] =term_1 + term_2 + term_3   #g + amplitude * sin( freq* time[i] + phase)
+    #force[0] += delta
 
 
 @cython.boundscheck(False)
@@ -204,7 +214,7 @@ cdef double integrated_expression_positive(double A, double bar_omega, double K,
 
     term_1 = bar_omega * cos(phi) * cos(KM * t)
     term_2 = -bar_omega * cos(bar_omega * t + phi)
-    term_3 = KM * sin(phi) * sin(KM * t)
+    term_3 = -KM * sin(phi) * sin(KM * t)
 
     return A * (term_1 + term_2 + term_3) / denominator
 
@@ -398,30 +408,34 @@ cdef void _parallel_calc_matrices_0(long double[:] t, long double[:,:] out,
 
 def calc_matrices_1(t, K, M, v, h):
     out = np.zeros((t.shape[0],t.shape[0]), dtype='float64')
-    _parallel_calc_matrices_1(t, out, K, M, v, h)
+    t_len = t.shape[0]
+    _parallel_calc_matrices_1(t, out, K, M, v, h, t_len)
     return out
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _parallel_calc_matrices_1(long double[:] t, long double[:,:] out, long double K,
-                                  long double M, long double[:] v, long double h) nogil:
+                                  long double M, long double[:] v, long double h, long int t_len) nogil:
     cdef  int i, j, l
-    cdef long double x_i, x_j,J
+    cdef long double x_i, x_j,J, v00
+    v00 = v[0]
     j=0
     i=0
-    l=len(t)//50
-    printf('\n Calculate matrices: \n')
-    printf('___________________________________________________\n')
-    for i in prange(t.shape[0], nogil=True):
+    l=t_len//50
+    printf("\n Calculate matrices: \n")
+    printf("___________________________________________________\n")
+    for i in prange(t_len, nogil=True):
         if (i%l)==0:
-            printf('#')
-        x_i=integral_0(v,i,t)
+            printf("#")
+        #x_i = integral_0(v,i,t)
+        x_i = integral_c(v[i],v[i-1], v00, t[i], t[i-1])
         for j in range(i+1):
-            x_j=integral_0(v,j,t)
-            J=Bessel(K,M,t[i],t[j],v[i],x_i,x_j)
-            out[i,j]=-(J-summand(t[i],t[j],K,M))*h
-    printf('#\n')
+            #x_j = integral_0(v,j,t)
+            x_j = integral_c(v[j],v[j-1], v00, t[j], t[j-1])
+            J = Bessel_c(K,M,t[i],t[j],v[i],x_i,x_j)
+            out[i,j]=-(J-summand_c(t[i],t[j],K,M))*h
+    printf("#\n")
     out[0,0]/=2
     out[0,0]+=1
     for i in range(1,t.shape[0]):
@@ -560,9 +574,9 @@ def calc_P(syst: SystemUnderStudy, t: np.ndarray, K: float, M: float, v: np.ndar
     O =np.zeros_like(t, dtype='float64')
     O_new(O, v*v, M, K)
     print(f'O(0)={O[0]}')
-    #ff = fourier_force(10, omega[0], ampl=0, freq=0, phase=0, t[1]-t[0])
-    absFp = np.zeros_like(force) + g /O[0]
-    argFp = np.zeros_like(force) + pi/2
+    ff = fourier_force(g, O[0], ampl=amplitude, freq=freq, phase=phase, step_time=t[1]-t[0])
+    absFp = np.zeros_like(force) + np.abs(ff*np.sqrt(2*pi) ) #  g /O[0]  #
+    argFp = np.zeros_like(force) + np.angle(ff*np.sqrt(2*pi) )  #  pi/2  #
     #for i in range(t.shape[0]):
     #    ff = fourier_force(g, O[i], amplitude, freq, phase, t[1]-t[0])
     #    ff_abs, ff_arg = abs_arg(ff)
@@ -572,7 +586,7 @@ def calc_P(syst: SystemUnderStudy, t: np.ndarray, K: float, M: float, v: np.ndar
     #argFp = np.zeros_like(force) - np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
     #absFp = np.abs(four_force)
     #argFp = np.angle(four_force) - pi/2  #+ pi/4#
-    _calc_P(syst, t, return_force, K, M, v*v,force,j,absFp,argFp, U,O, amplitude, freq, phase)
+    _calc_P(syst, t, return_force, K, M, v*v,force,j, absFp, argFp, U,O, amplitude, freq, phase)
     return return_force, absFp, argFp
 
 
@@ -599,7 +613,7 @@ cdef void _calc_P(SystemUnderStudy syst, double[:] t, double [:] outP0, double K
         double term_2, term_3, multiplier_1, multiplier_2, absFp_old, argFp_old
         double complex F_p
     l=len(t)//50
-    g = 10.
+    g = syst.g
     #O_new(omega,v_sq,M,K)
 
     absFp_old=g/(omega[0])
@@ -626,9 +640,9 @@ cdef void _calc_P(SystemUnderStudy syst, double[:] t, double [:] outP0, double K
             integ_omega = integral(omega, i, t[i]-t[i-1])
         else:
             integ_omega = integral_O_M_eq_0(sqrt(v_sq[0]),t[i], sqrt(v_sq[i]),sqrt(v_sq[i-1]), i, t[i+1]-t[i],K)
-        F_p = fourier_force(g, omega[i], amplitude, freq, phase, t[1] - t[0])
+        #F_p = fourier_force(g, omega[i], amplitude, freq, phase, t[1] - t[0])
         #absFp_old, argFp_old = abs_arg(F_p)
-        outP0[i] = step_cicle_for_force(syst, omega[i], K, M, p[i], v_sq[i], absFp_old, argFp_old, C,
+        outP0[i] = step_cicle_for_force(syst, omega[i], K, M, p[i], v_sq[i], absFp[i], argFp[i], C,
                                         integ_omega, t[i])
     printf('*\n')
 

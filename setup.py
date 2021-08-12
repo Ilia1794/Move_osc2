@@ -2,12 +2,20 @@ from distutils.core import Extension, setup
 from Cython.Build import cythonize
 import subprocess
 import os
-
+import numpy as np
 
 # Start:
 # python setup.py build_ext --inplace
-ext = Extension(name="cython_module", sources=["cython_module.pyx"])
-setup(ext_modules=cythonize(ext))
+ext = Extension(name="cython_module",
+                sources=["cython_module.pyx", "c_module/func.c"],
+                language='c',
+                include_dirs=[np.get_include()],
+                library_dirs=[np.get_include()],
+
+                )
+setup(ext_modules=cythonize(ext, language_level=3),
+      package_data={'c_module': ['*.c', '*.h']},
+      include_package_data=True)
 subprocess.call(["python", "main.py"])
 """print("Очистить консоль?")
 a = str(input())

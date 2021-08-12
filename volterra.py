@@ -5,20 +5,21 @@ import scipy.integrate as integrate
 from cmath import sqrt, cos, sin, cosh, sinh, pi
 from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matrices_0, calc_P1, \
     calc_P, calc_p0, harmonic_force, right_side_for_harmonic_force, integrand, calc_P2, SystemUnderStudy
+import time
 
 
 def params():
     M1 = 10.
-    K1 = 1.5
-    a = 0.01
-    v = 0.
+    K1 = 0.5
+    a = 0.#01
+    v = -0.5
     T = 150
-    h1 = 25000
+    h1 = 55000
     g = 10.
-    freq = 0.10
+    freq = 3
     amplitude = 5
-    phase = 0  # pi/2
-    M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
+    phase = pi/4
+    # M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g, freq, amplitude, phase
 
 
@@ -34,7 +35,9 @@ def volterra_compute():
         print(f" v^2={v * v}; a={a}; K= {K1}; M={M1}\n  v^2<={1 - K1 * K1 / 4}")
     else:
         print(f" v^2={v * v}; a={a}; K= {K1}; M={M1}\n v^2<{1 - K1 / (M1)}")
+    time1 = time.time()
     Matr = calc_matrices_1(t, K1, M1, v_a, h)
+    print(f'time work calc_matrices_1 is {time.time() - time1} sec')
     force = harmonic_force(g, t, phase, True, freq, amplitude)
     if M1 != 0:
         p = right_side_for_harmonic_force(g, phase, freq, amplitude, t, K1, M1, h1)
