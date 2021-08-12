@@ -7,7 +7,7 @@ import numpy as np
 #import scipy.special as sc
 #import scipy
 cimport scipy.special.cython_special as csc
-from c_module cimport Bessel_c, summand_c, integral_c
+#from c_module cimport Bessel_c, summand_c, integral_c
 
 #!-*-coding: utf-8 -*-
 cdef class SystemUnderStudy(object):
