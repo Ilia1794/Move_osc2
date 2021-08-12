@@ -661,9 +661,9 @@ cdef double step_cicle_for_force(SystemUnderStudy syst, double omega, double K, 
             (M*omega*omega-K)/
             (omega*(M*M*omega*omega-K*M+2))
         )*(M*omega*omega-K)
-    multiplier_2 = sin(integ_omega + argFp)
+    multiplier_2 = sin(integ_omega - argFp)
     term_3 = C * multiplier_1 * multiplier_2 * absFp
-    outP0 = p1 - term_2 - term_3 + M*z_fr_f
+    outP0 = p1 - term_2 + term_3 - M*z_fr_f
     return outP0
 
 

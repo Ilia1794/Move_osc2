@@ -6,7 +6,8 @@ import numpy as np
 def plot_two_lines(data_for_abscissa: np.ndarray, data_first: np.ndarray, data_second: np.ndarray,
                    name_plots: str = 'Plots', name_x: str = 'x', name_y: str = 'Force',
                    name_first: str = 'data_first', name_second: str = 'data_second', mod_iter:
-                   int = 10) -> None:
+                   int = 10, time: np.ndarray = np.linspace(0,100,1000),
+                   v: np.ndarray = np.linspace(0,100,1000) ) -> None:
     raref = 10
     #absc = np.zeros((data_for_abscissa.shape[0]//10), dtype='float64')
     absc = np.zeros((data_for_abscissa.shape[0]//raref), dtype='float64')

@@ -10,15 +10,15 @@ import time
 
 def params():
     M1 = 10.
-    K1 = 0.5
-    a = 0.#01
-    v = -0.5
-    T = 150
-    h1 = 55000
+    K1 = -1
+    a = 0.01
+    v = 0.
+    T = 100
+    h1 = 20000
     g = 10.
-    freq = 3
-    amplitude = 5
-    phase = pi/4
+    freq = 0.02
+    amplitude = 10
+    phase = 0#pi/4
     # M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g, freq, amplitude, phase
 
