@@ -428,13 +428,13 @@ cdef void _parallel_calc_matrices_1(long double[:] t, long double[:,:] out, long
     for i in prange(t_len, nogil=True):
         if (i%l)==0:
             printf("#")
-        #x_i = integral_0(v,i,t)
-        x_i = integral_c(v[i],v[i-1], v00, t[i], t[i-1])
+        x_i = integral_0(v,i,t)
+        #x_i = integral_c(v[i],v[i-1], v00, t[i], t[i-1])
         for j in range(i+1):
-            #x_j = integral_0(v,j,t)
-            x_j = integral_c(v[j],v[j-1], v00, t[j], t[j-1])
-            J = Bessel_c(K,M,t[i],t[j],v[i],x_i,x_j)
-            out[i,j]=-(J-summand_c(t[i],t[j],K,M))*h
+            x_j = integral_0(v,j,t)
+            #x_j = integral_c(v[j],v[j-1], v00, t[j], t[j-1])
+            J = Bessel(K,M,t[i],t[j],v[i],x_i,x_j)
+            out[i,j]=-(J-summand(t[i],t[j],K,M))*h
     printf("#\n")
     out[0,0]/=2
     out[0,0]+=1
