@@ -12,8 +12,9 @@ from volterra import volterra_compute
 
 
 def main():
-    abscissa, numeric, analytic, p, force, P1, P2, absFp, argFp  = volterra_compute()
+    abscissa, numeric, analytic, p, force, P1, P2, absFp, argFp, U_analytic, U_numeric = volterra_compute()
     plot_two_lines(abscissa, numeric, analytic, 'Force', 't', 'P', 'Numeric', 'Analytic')
+    plot_two_lines(abscissa, U_numeric, U_analytic, 'Displacement', 't', 'U', 'Numeric', 'Analytic')
     plot_two_lines(abscissa, numeric, P1, 'Force_old_1', 't', 'P1', 'Numeric', 'Analytic')
     plot_two_lines(abscissa, numeric, P2, 'Force_old_2', 't', 'P1', 'Numeric', 'Analytic')
     plot_two_lines(abscissa, p, force, 'Force_external', 't', 'Force', 'p', 'force')

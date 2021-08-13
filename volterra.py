@@ -4,21 +4,22 @@ import tqdm
 import scipy.integrate as integrate
 from cmath import sqrt, cos, sin, cosh, sinh, pi
 from cython_module import calc_matrices_1, calc_p1, calc_P0, calc_v, calc_matrices_0, calc_P1, \
-    calc_P, calc_p0, harmonic_force, right_side_for_harmonic_force, integrand, calc_P2, SystemUnderStudy
+    calc_P, calc_p0, harmonic_force, right_side_for_harmonic_force, integrand, calc_P2, SystemUnderStudy,\
+    calc_U_analityc, calc_U
 import time
 
 
 def params():
     M1 = 10.
-    K1 = -1
+    K1 = -0.5
     a = 0.01
-    v = 0.
+    v = 0.1
     T = 100
     h1 = 20000
     g = 10.
-    freq = 0.02
-    amplitude = 10
-    phase = 0#pi/4
+    freq = 0#3
+    amplitude = 0
+    phase = 0#pi/4.5
     # M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g, freq, amplitude, phase
 
@@ -50,7 +51,9 @@ def volterra_compute():
     P2 = calc_P2(t, K1, M1, v_a, g, j)
     print(P1)
     sol = la.solve_triangular(Matr, p, 0, True, False, False, None, False)
-    return t, sol, P, p, force, P1, P2,absFp, argFp
+    U_analytic = calc_U_analityc(t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
+    U_numeric = calc_U(t, K1, M1, sol, force, v_a)
+    return t, sol, P, p, force, P1, P2, absFp, argFp, U_analytic, U_numeric
 
 
 def right_side_for_harmonic_force_1(g, phase, time, K, M):
