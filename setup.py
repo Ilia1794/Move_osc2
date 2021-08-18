@@ -18,7 +18,7 @@ setup(ext_modules=cythonize(ext, language_level=3),
       include_package_data=True)
 '''
 
-ext = Extension(name="cython_module")
+ext = Extension(name="cython_module", sources = ["cython_module.pyx"])
 setup(ext_modules=cythonize(ext))
 subprocess.call(["python", "main.py"])
 """print("Очистить консоль?")
