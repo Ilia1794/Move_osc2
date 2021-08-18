@@ -6,7 +6,8 @@ import numpy as np
 
 # Start:
 # python setup.py build_ext --inplace
-# TODO: off c_module!!!
+
+'''
 ext = Extension(name="cython_module", sources = ["cython_module.pyx", "c_module/func.c"],
                 language='c',
                 include_dirs=[np.get_include()],
@@ -15,6 +16,10 @@ ext = Extension(name="cython_module", sources = ["cython_module.pyx", "c_module/
 setup(ext_modules=cythonize(ext, language_level=3),
       package_data={'c_module': ['*.c', '*.h']},
       include_package_data=True)
+'''
+
+ext = Extension(name="cython_module")
+setup(ext_modules=cythonize(ext))
 subprocess.call(["python", "main.py"])
 """print("Очистить консоль?")
 a = str(input())
