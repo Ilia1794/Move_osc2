@@ -33,8 +33,8 @@ def plot_two_lines(data_for_abscissa: np.ndarray, data_first: np.ndarray, data_s
 
     plt.xlabel(name_x)
     plt.ylabel(name_y)
-    ax.plot(data_for_abscissa, data_first, "-.", lw=2, label=name_first)
-    ax.plot(data_for_abscissa, data_second, lw=1, label=name_second)
+    ax.plot(data_for_abscissa[1:], data_first[1:], "-.", lw=2, label=name_first)
+    ax.plot(data_for_abscissa[1:], data_second[1:], lw=1, label=name_second)
     ax.grid(which='major',  # color = 'k',
             linewidth=0.5)
     ax.grid(which='minor',  # color = 'k',

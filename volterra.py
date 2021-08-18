@@ -12,13 +12,13 @@ import time
 def params():
     M1 = 10.
     K1 = -0.5
-    a = 0.01
+    a = 0.#01
     v = 0.1
-    T = 100
-    h1 = 20000
-    g = 10.
-    freq = 0#3
-    amplitude = 0
+    T = 50
+    h1 = 15000
+    g = 0.
+    freq = 2
+    amplitude = 1
     phase = 0#pi/4.5
     # M1, K1, a, v, T, h1, g = input_parameter(M1, K1, a, v, T, h1, g)
     return M1, K1, a, v, T, h1, g, freq, amplitude, phase
@@ -26,6 +26,7 @@ def params():
 
 def volterra_compute():
     M1, K1, a, v, T, h1, g, freq, amplitude, phase = params()
+    phase = 0
     syst = SystemUnderStudy(M1, K1, a, v, T, h1, g, freq, amplitude, phase)
     ampl_v = 1
     j = 1
@@ -39,7 +40,7 @@ def volterra_compute():
     time1 = time.time()
     Matr = calc_matrices_1(t, K1, M1, v_a, h)
     print(f'time work calc_matrices_1 is {time.time() - time1} sec')
-    force = harmonic_force(g, t, phase, True, freq, amplitude)
+    force = harmonic_force(syst, g, t, phase, True, freq, amplitude)
     if M1 != 0:
         p = right_side_for_harmonic_force(g, phase, freq, amplitude, t, K1, M1, h1)
     else:
@@ -51,7 +52,7 @@ def volterra_compute():
     P2 = calc_P2(t, K1, M1, v_a, g, j)
     print(P1)
     sol = la.solve_triangular(Matr, p, 0, True, False, False, None, False)
-    U_analytic = calc_U_analityc(t, K1, M1, v_a, force, j, freq, amplitude, phase, g)
+    U_analytic = calc_U_analityc(t, K1, M1, v_a, force, j, freq, amplitude, phase, g, syst)
     U_numeric = calc_U(t, K1, M1, sol, force, v_a)
     return t, sol, P, p, force, P1, P2, absFp, argFp, U_analytic, U_numeric
 

@@ -7,8 +7,8 @@ import numpy as np
 #import scipy.special as sc
 #import scipy
 cimport scipy.special.cython_special as csc
-# TODO: Off c_module!!!
-from c_module cimport Bessel_c, summand_c, integral_c
+
+#from c_module cimport Bessel_c, summand_c, integral_c
 
 #!-*-coding: utf-8 -*-
 cdef class SystemUnderStudy(object):
@@ -31,14 +31,58 @@ cdef class SystemUnderStudy(object):
     cdef double ext_force(self, double tau)nogil:
         cdef double term_1, term_2, term_3, delta
         term_1 = 0
-        if tau == 0:
-            term_1 = self.h/self.T
         term_2 = 0
         term_3 = 0
-        if tau >=0 :
+        if tau == 0:
+            term_1 += self.h/self.T
+            term_2 += self.g / 2
+            term_3 += self.ampl * cos(self.freq * tau) / 2
+        if tau >0 :
             term_2 = self.g
-            term_3 = self.ampl * sin(self.freq*tau + self.phase)
+            term_3 = self.ampl * cos(self.freq*tau)
         return term_1+term_2+term_3
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double sum_force_f(self, double tau, double v_sq)nogil:
+        cdef:
+            double zero_freq, harmonic_force, zn_1, zn_2, K, M,omega, g, A
+        K, M,omega, g, A = self.K, self.M, self.freq,self.g, self.ampl
+        zn_1 = 2*sqrt(1-v_sq)+self.K
+        zero_freq = 0
+        if tau == 0:
+            zero_freq = self.h/self.T
+        zero_freq +=g*K / zn_1
+        if fabs(omega)<=sqrt(1-v_sq):
+            zn_2 = 2*sqrt(1-v_sq-(omega**2))+ K - M*(omega**2)
+        else:
+            zn_2 = (2*self.sign(omega)*sqrt(fabs(1-v_sq-omega**2))
+                     - K + M*omega**2)
+        harmonic_force = A*cos(omega*tau)*(K- M*omega**2 )/zn_2
+        return zero_freq + harmonic_force
+
+
+    cdef double sign(self, double omega)nogil:
+        return omega/fabs(omega)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef double sum_force_d(self, double tau, double v_sq)nogil:
+        cdef:
+            double zero_freq, harmonic_force, zn_1, zn_2
+        zn_1 = 2 * sqrt(1 - v_sq) + self.K
+        zero_freq = 0
+        if tau == 0:
+            zero_freq = self.h / self.T
+        zero_freq += self.g * self.K / zn_1
+        if fabs(self.freq) <= sqrt(1 - v_sq):
+            zn_2 = 2 * sqrt(1 - v_sq - self.freq ** 2) + self.K - self.M * self.freq ** 2
+        else:
+            zn_2 = -(2 * (self.freq / fabs(self.freq)) * sqrt(
+                fabs(1 - v_sq - self.freq ** 2)) - self.K + self.M * self.freq ** 2)
+        harmonic_force = self.ampl * cos(self.freq * tau) / zn_2
+        return zero_freq + harmonic_force
+
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -100,34 +144,33 @@ cdef void _hello_world_()nogil:
     printf("hello_world")
 
 
-def harmonic_force(g: float, time: np.ndarray, phase: float = 0., delta_indicator: bool = False,
+def harmonic_force(syst: SystemUnderStudy, g: float, time: np.ndarray, phase: float = 0., delta_indicator: bool = False,
                    freq: float = 0, amplitude: float = 0) -> np.ndarray:
     delta = float(int(delta_indicator)/(time[1]-time[0]))
     force = np.zeros_like(time, dtype = 'float64')
     max_iter = int(force.shape[0])
-    _harmonic_force_(g, phase, delta, time, force, freq, amplitude, max_iter)
+    _harmonic_force_(syst, g, phase, delta, time, force, freq, amplitude, max_iter)
     return force
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _harmonic_force_(double g, double phase,
+cdef void _harmonic_force_(SystemUnderStudy syst, double g, double phase,
                            double delta, double[:] time, double[:] force, double freq,
                            double amplitude, int iter_max)nogil:
     cdef int i
     cdef double term_1, term_2, term_3
     for i in prange(iter_max, nogil=True):
-
-        term_1 = 0
-        if time[i] == 0:
-            term_1 = delta
-        term_2 = 0
-        term_3 = 0
-        if time[i] >= 0:
-            term_2 = g
-            term_3 = amplitude * sin(freq * time[i] + phase)
-
-        force[i] =term_1 + term_2 + term_3   #g + amplitude * sin( freq* time[i] + phase)
+        force[i] = syst.ext_force(time[i])
+        #term_1 = 0
+        #if time[i] == 0:
+        #    term_1 = delta
+        #term_2 = 0
+        #term_3 = 0
+        #if time[i] >= 0:
+        #    term_2 = g
+        #    term_3 = amplitude * cos(freq * time[i])# + phase)
+        #force[i] =term_1 + term_2 + term_3   #g + amplitude * sin( freq* time[i] + phase)
     #force[0] += delta
 
 
@@ -160,15 +203,15 @@ def right_side_for_harmonic_force(g: float, phase: float, freq_f: float, amplitu
 @cython.wraparound(False)
 cdef void negative_K(double[:] rs, double[:] time, int max_iter,double amplitude, double bar_omega, double K, double M,
                                   double phase, double g):
-    freq = sqrt(abs(K / M))
+    cdef double term_1, term_2, term_3, freq, time_max, d_tau
+    freq = sqrt(-K / M)
     for i in range(1, time.shape[0]):
         time_max = time[i]
-        integ = 0
         d_tau = time_max / max_iter
-        rs[i] = integrated_expression_negative(amplitude, bar_omega, K, M, time[i], phase)
-        rs[i] += g * sinh(freq * time_max) / freq
-        rs[i] += cosh(freq * time_max)
-        rs[i] *= 2 / M
+        term_1 = integrated_expression_negative(amplitude, bar_omega, K, M, time[i], phase)
+        term_2 = g * sinh(freq * time_max) / freq
+        term_3 = cosh(freq * time_max)
+        rs[i] = 2*(term_1+term_2+term_3)/M
 
 
 @cython.boundscheck(False)
@@ -178,13 +221,13 @@ cdef double integrated_expression_negative(double A, double bar_omega, double K,
     cdef:
         double term_1, term_2, KM, denominator, term_3
     KM = sqrt(-K/M)
-    denominator = bar_omega**2+KM**2
+    denominator = bar_omega**2+K/M
 
-    term_1 = bar_omega*cos(phi)*cosh(KM*t)
-    term_2 = -bar_omega*cos(bar_omega*t+phi)
-    term_3 = KM*sin(phi)*sinh(KM*t)
+    term_2 = bar_omega*sin(bar_omega*t)#-bar_omega*cos(KM*t)
+    term_3 = KM*sinh(KM*t)
 
-    return A*(term_1+term_2+term_3)/denominator
+    return A*(term_2+term_3)/denominator
+    #return A*(bar_omega*sin(bar_omega*t)+KM*sinh(KM*t))/(bar_omega**2+K/M)
 
 
 @cython.boundscheck(False)
@@ -192,15 +235,15 @@ cdef double integrated_expression_negative(double A, double bar_omega, double K,
 cdef void positive_K(double[:] rs, double[:] time, int max_iter,double amplitude, double bar_omega, double K, double M,
                                   double phase, double g):
     cdef int i
+    cdef double term_1, term_2, term_3, freq, time_max, d_tau
     freq = sqrt(abs(K / M))
     for i in range(1, time.shape[0]):
         time_max = time[i]
-        integ = 0
         d_tau = time_max/max_iter
-        rs[i] = integrated_expression_positive(amplitude, bar_omega, K, M, time[i], phase)
-        rs[i] += g * sin(freq * time_max) / freq
-        rs[i] += cos(freq*time_max)
-        rs[i] *= 2/M
+        term_1 = integrated_expression_positive(amplitude, bar_omega, K, M, time[i], phase)
+        term_2 = g * sin(freq * time_max) / freq
+        term_3 = cos(freq*time_max)
+        rs[i] = (2/M)*(term_1+term_2+term_3)
 
 
 
@@ -211,13 +254,12 @@ cdef double integrated_expression_positive(double A, double bar_omega, double K,
     cdef:
         double term_1, term_2, KM, denominator, term_3
     KM = sqrt(K / M)
-    denominator = bar_omega ** 2 - KM ** 2
+    denominator = bar_omega ** 2 - K / M
 
-    term_1 = bar_omega * cos(phi) * cos(KM * t)
-    term_2 = -bar_omega * cos(bar_omega * t + phi)
-    term_3 = -KM * sin(phi) * sin(KM * t)
+    term_2 = bar_omega * sin(bar_omega * t )
+    term_3 = KM * sin(KM * t)
 
-    return A * (term_1 + term_2 + term_3) / denominator
+    return A * (term_2 + term_3) / denominator
 
 
 @cython.boundscheck(False)
@@ -413,7 +455,7 @@ def calc_matrices_1(t, K, M, v, h):
     _parallel_calc_matrices_1(t, out, K, M, v, h, t_len)
     return out
 
-# TODO: Off c_module!!!
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _parallel_calc_matrices_1(long double[:] t, long double[:,:] out, long double K,
@@ -429,13 +471,13 @@ cdef void _parallel_calc_matrices_1(long double[:] t, long double[:,:] out, long
     for i in prange(t_len, nogil=True):
         if (i%l)==0:
             printf("#")
-        #x_i = integral_0(v,i,t)
-        x_i = integral_c(v[i],v[i-1], v00, t[i], t[i-1])
+        x_i = integral_0(v,i,t)
+        #x_i = integral_c(v[i],v[i-1], v00, t[i], t[i-1])
         for j in range(i+1):
-            #x_j = integral_0(v,j,t)
-            x_j = integral_c(v[j],v[j-1], v00, t[j], t[j-1])
-            J = Bessel_c(K,M,t[i],t[j],v[i],x_i,x_j)
-            out[i,j]=-(J-summand_c(t[i],t[j],K,M))*h
+            x_j = integral_0(v,j,t)
+            #x_j = integral_c(v[j],v[j-1], v00, t[j], t[j-1])
+            J = Bessel(K,M,t[i],t[j],v[i],x_i,x_j)
+            out[i,j]=-(J-summand(t[i],t[j],K,M))*h
     printf("#\n")
     out[0,0]/=2
     out[0,0]+=1
@@ -573,25 +615,18 @@ def calc_P(syst: SystemUnderStudy, t: np.ndarray, K: float, M: float, v: np.ndar
     #omega =np.zeros_like(t, dtype='float64')
     U =np.zeros_like(t, dtype='float64')
     O =np.zeros_like(t, dtype='float64')
+    v_sq = v*v
     O_new(O, v*v, M, K)
     t_len = t.shape[0]
     print(f'O(0)={O[0]}')
     ff = fourier_force(g, O[0], ampl=amplitude, freq=freq, phase=phase, step_time=t[1]-t[0])
     absFp = np.zeros_like(force) + np.abs(ff*np.sqrt(2*pi) ) #  g /O[0]  #
-    argFp = np.zeros_like(force) + np.angle(ff*np.sqrt(2*pi) )  #  pi/2  #
-    #for i in range(t.shape[0]):
-    #    ff = fourier_force(g, O[i], amplitude, freq, phase, t[1]-t[0])
-    #    ff_abs, ff_arg = abs_arg(ff)
-    #    absFp[i] = np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
-    #    argFp[i] = np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
-    #absFp = np.zeros_like(force) + np.abs(ff*np.sqrt(2*pi) ) #10  # np.abs(four_force)
-    #argFp = np.zeros_like(force) - np.angle(ff*np.sqrt(2*pi) )  #pi/2  # np.angle(four_force)# + pi/4
-    #absFp = np.abs(four_force)
-    #argFp = np.angle(four_force) - pi/2  #+ pi/4#
-    _calc_P(syst, t, return_force, K, M, v*v,force,j, absFp, argFp, U,O, amplitude, freq, phase, t_len)
+    argFp = np.zeros_like(force) + np.angle(ff*np.sqrt(2*pi) )  #
+    #_calc_P(syst, t, return_force, K, M, v*v,force,j, absFp, argFp, U,O, amplitude, freq, phase, t_len)
+    _new_calc_P_(syst, t, return_force, np.abs(ff ), np.angle(ff ) , O, v_sq)
     return return_force, absFp, argFp
 
-
+"""
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef (double, double) abs_arg(double complex f)nogil:
@@ -601,8 +636,8 @@ cdef (double, double) abs_arg(double complex f)nogil:
     abs_f = sqrt(f.real**2+f.imag**2)*sqrt(2*pi)
     arg_f = atan(f.imag/f.real)
     return abs_f, arg_f
-
-
+"""
+"""
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _calc_P(SystemUnderStudy syst, double[:] t, double [:] outP0, double K, double M, double[:] v_sq, double[:] p,
@@ -616,21 +651,18 @@ cdef void _calc_P(SystemUnderStudy syst, double[:] t, double [:] outP0, double K
         double complex F_p
     l=t_len//50
     g = syst.g
-    #O_new(omega,v_sq,M,K)
-
     absFp_old=g/(omega[0])
     argFp_old=pi/2
     C_old = sqrt(
             sqrt(1.-v_sq[0]-omega[0]*omega[0])/
            (omega[0]*( 1.+M*sqrt(1.-v_sq[0]-omega[0]*omega[0]) ))
     )
-    # По идее, в этой константе и должен быть модуль фурье-образа силы
     omega_0 = omega[0]
     v_sq_0 = v_sq[0]
     C1 = sqrt(
               omega_0 * (1 - v_sq_0 - omega_0**2) * (M*M*omega_0**2 - K*M + 2)
              )
-    C2 = omega_0 * sqrt( M*omega_0**2 - K )*(1 + M * sqrt( 1 - v_sq_0 - omega_0**2))
+    C2 =  sqrt( M*omega_0**2 - K )*(1 + M * sqrt( 1 - v_sq_0 - omega_0**2)) *omega_0
     C = C1 / C2
     printf('\n Calculate Analityc, C= %f, C_old= %f, C2= %f, v^2= %f\n',C, C_old,
            M * sqrt( 1 - v_sq_0 - omega_0**2), v_sq_0)
@@ -642,8 +674,6 @@ cdef void _calc_P(SystemUnderStudy syst, double[:] t, double [:] outP0, double K
             integ_omega = integral(omega, i, t[i]-t[i-1])
         else:
             integ_omega = integral_O_M_eq_0(sqrt(v_sq[0]),t[i], sqrt(v_sq[i]),sqrt(v_sq[i-1]), i, t[i+1]-t[i],K)
-        #F_p = fourier_force(g, omega[i], amplitude, freq, phase, t[1] - t[0])
-        #absFp_old, argFp_old = abs_arg(F_p)
         outP0[i] = step_cicle_for_force(syst, omega[i], K, M, p[i], v_sq[i], absFp[i], argFp[i], C,
                                         integ_omega, t[i], freq, v_sq_0)
     printf('*\n')
@@ -658,50 +688,76 @@ cdef double step_cicle_for_force(SystemUnderStudy syst, double omega, double K, 
         int i
         double term_2, term_3, multiplier_1, multiplier_2, outP0,z_fr_f, p1, zn, sign
     p1 = syst.ext_force(time)
-    zn = 1
-    sign = 1
-    if fabs(freq)<=sqrt(1-v_sq_0):
-        zn = 2*sqrt(1- v_sq- freq**2)+ K-M*freq**2
-    else:
-        sign = freq/fabs(freq)
-        zn = 2. *sign* sqrt(fabs(1. - v_sq- freq**2)) - K+M*freq**2
-        sign = 1
-    term_2 = p*sign /zn
-    #term_2 = p1 / (2. * sqrt(fabs(1. - v_sq- freq**2)) - K+M*freq**2)#/2
-    #term_2 = p*(M*freq**2 - K) / (2. * sqrt(fabs(1. - v_sq- freq**2)) + K-M*freq**2)
-    #term_2 = p / (2. * sqrt(fabs(1. - v_sq)) + K)
-    z_fr_f = zero_freq_force(syst, time, v_sq, freq, M, K)#*(M*freq**2 - K)
+    z_fr_f = _freq_force_new_(syst, time, v_sq, freq, M, K)#*(M*freq**2 - K)
     multiplier_1 = sqrt(
                             (M*omega*omega-K)/
                             (omega*(M*M*omega*omega-K*M+2))
                         )*(M*omega*omega-K)
     multiplier_2 = sin(integ_omega - argFp)
     term_3 = C * multiplier_1 * multiplier_2 * absFp
-    #outP0 = p -(M*freq**2-K)*term_2 + term_3 #+ M*z_fr_f/zn
-    outP0 = p -K*term_2 + term_3 - M*z_fr_f/zn
-    #outP0 = p + term_3 - z_fr_f
+    outP0 = p1 + term_3 - z_fr_f
     return outP0
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef double zero_freq_force(SystemUnderStudy syst, double time, double v_sq, double freq, double M, double K)nogil:
-    cdef double term_1, zn_1, term_2, zn
-    #zn_2 = 2*sqrt(fabs(1. - v_sq- freq**2))+syst.K-M*freq**2
-    #zn_2 = 2*sqrt(1. - v_sq)+syst.K
-    term_1 = syst.d2_ext_force(time)#/zn_2
+cdef double _freq_force_new_(SystemUnderStudy syst, double time, double v_sq, double freq,
+                             double M, double K)nogil:
+    cdef double zero_freq, force_freq, zn_2, p_freq, mult_p_freq
+    zero_freq = syst.g*K/(2*sqrt(1-v_sq)+K)
+    if fabs(freq)<=sqrt(1-v_sq):
+        p_freq = syst.ampl * cos(freq * time)
+        zn_2 = 2*sqrt(fabs(1. - v_sq- freq**2))+K-M*freq**2
+        mult_p_freq = K - M*freq**2
+        force_freq = (p_freq * mult_p_freq)/ zn_2
+    else:
+        p_freq = syst.ampl * cos(freq * time)
+        zn_2 = 2*(freq/fabs(freq))*sqrt(fabs(1. - v_sq - freq**2))- K + M*freq**2
+        mult_p_freq = M*freq**2 - K
+        force_freq = (p_freq*mult_p_freq)/ zn_2
+    return zero_freq+force_freq
+"""
 
-    #if fabs(freq)<=sqrt(1-v_sq):
-    #    zn = 2*sqrt(1- v_sq- freq**2)+ K-M*freq**2
-    #else:
-    #    sign = freq/fabs(freq)
-    #    zn = 2. *sign* sqrt(fabs(1. - v_sq- freq**2)) - K+M*freq**2
-    #    sign = 1
-    #term_2 = syst.ampl*sin(syst.freq*time+syst.phase)*sign*(M*syst.freq**2-K) /zn
-    #term_1 = syst.g*(M*syst.freq**2-K)/(2*sqrt(1-v_sq)+K)
-    return term_1#+term_2
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _new_calc_P_(SystemUnderStudy syst, double[:] t, double [:] outP0, double absFp, double argFp,
+                        double[:] omega, double[:] v_sq):
+    cdef:
+        int i
+        double C, l, M, K, integ_omega
+    l = t.shape[0]//50
+    M = syst.M
+    K = syst.K
+    C = sqrt(sqrt(1-v_sq[0]-omega[0]*omega[0]))*absFp/\
+        sqrt(omega[0]+omega[0]*M*sqrt(1-v_sq[0]-omega[0]*omega[0]))
+    printf('\nCalculate Analityc\n')
+    printf('___________________________________________________\n')
+    for i in prange(t.shape[0], nogil=True):
+        if (i%l)==0:
+            printf('*')
+        if M!=0:
+            integ_omega = integral(omega, i, t[i]-t[i-1])
+        else:
+            integ_omega = integral_O_M_eq_0(sqrt(v_sq[0]),t[i], sqrt(v_sq[i]),sqrt(v_sq[i-1]), i, t[i+1]-t[i],K)
+        outP0[i] = _force_in_dot_(syst, t[i], integ_omega, C, argFp, v_sq[i], omega[i])
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double _force_in_dot_(SystemUnderStudy syst, double t, double integ_omega, double C, double argFp, double v_sq,
+                           double omega)nogil:
+    cdef:
+        double W_0, outP, M, sum_force, K, p
+    M = syst.M
+    K = syst.K
+    p = syst.ext_force(t)
+    W_0 = (M*omega*omega - K)*sqrt(
+                sqrt(1 - v_sq - omega*omega)/
+                (omega + omega*M*sqrt(1 - v_sq - omega*omega))
+                )
+    sum_force = syst.sum_force_f(t,v_sq)
+    outP = p - sum_force +C *W_0*sin(integ_omega - argFp)
+    return outP
 
 
 
@@ -711,22 +767,58 @@ cdef double complex fourier_force(double g, double omega, double ampl, double fr
                                   double step_time)nogil:
     cdef:
         double complex p, term_1, term_2, term_3, _sum_
-    term_1 = 1./sqrt(2*pi)+0j
+    term_1 = 1.+0j
     term_2 =0. + g*1j/(omega*sqrt(2*pi))
     if omega == 0.:
         printf('Omega equal 0')
-        term_2 += (1/step_time)*g*sqrt(pi/2) + 0j
-    term_3 = (ampl/sqrt(2*pi))*(freq*cos(phase) - 1j*omega*sin(phase))/(freq**2-omega**2)
+        term_2 += 1/step_time + 0j
+        #term_2 += (1/step_time)*g + 0j
+    term_3 = ampl*(1j*freq)/(freq**2-omega**2)
+    #term_3 = ampl*(1j*freq)/(omega**2-freq**2)
     if freq == omega:
         printf('Omega equal frequency force')
-        term_3 += 0.5*sqrt(pi/2)*ampl*(sin(phase)+1j*cos(phase))/step_time
+        #term_3 += 0.5*sqrt(pi/2)*ampl/step_time
+        term_3 += 1/step_time
     if freq == -omega:
         printf('Omega equal -1*frequency force')
-        term_3 += 0.5 * sqrt(pi / 2) * ampl * (sin(phase) - 1j * cos(phase)) / step_time
+        term_3 += 1 / step_time
     #printf('term_1=%f+i%f, term_2=%f+i%f, term_3=%f+i%f\n',term_1.real,term_1.imag,term_2.real,
     #       term_2.imag, term_3.real, term_3.imag)
     _sum_ = term_1 + term_2 + term_3
     return _sum_
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void cicle_for_force(int max_iter, int l, double[:] omega, double[:] t, double K, double M,
+                          double[:] p, double[:] v_sq, double[:] absFp, double[:] argFp, double C,
+                          double[:] outP0)nogil:
+    cdef:
+        int i
+        double term_2, term_3, multiplier_1, multiplier_2, integ_omega
+    for i in prange(max_iter, nogil=True):
+        if (i%l)==0:
+            printf('*')
+        # Это не работает для M=0!!!
+        integ_omega = integral(omega, i, t[i]-t[i-1])
+        term_2 = K*p[i] / (2. * sqrt(1. - v_sq[i]) + K)
+        multiplier_1 =  sqrt(
+                                (M*omega[i]*omega[i]-K)/
+                                (omega[i]*(M*M*omega[i]*omega[i]-K*M+2))
+                            )*(M*omega[i]*omega[i]-K)
+        #multiplier_1 = sqrt(
+        #                   (M*omega[i]**2 - K) / \
+        #                   omega[i]*(M*M * omega[i]*omega[i] - K*M + 2.)
+        #               )
+        #multiplier_1 = sqrt(
+        #                    sqrt(1-v_sq[i]-omega[i]*omega[i])/\
+        #                    (omega[i]*(M*M*omega[i]*omega[i]-K*M+2))
+        #                    )
+        multiplier_2 = sin(integ_omega - argFp[i])#*(M*omega[i]*omega[i]-K)
+        #multiplier_2 = sin(integ_omega - argFp_old)
+        term_3 = C * multiplier_1 * multiplier_2 * absFp[i]#*omega[i]
+        #term_3 = C * multiplier_1 * multiplier_2 * absFp_old
+        outP0[i] = p[i] - term_2 - term_3
 
 
 
@@ -805,15 +897,15 @@ cdef void _calc_P2(double[:] t, double [:] outP0, double K1, double M,  double[:
 
 def calc_U_analityc(t: np.ndarray, K: float, M: float, v: np.ndarray,
                     force: np.ndarray, j: int, freq: float,
-                    amplitude: float, phase: float, g: float) -> np.ndarray:
+                    amplitude: float, phase: float, g: float, syst: SystemUnderStudy) -> np.ndarray:
     U = np.zeros_like(t, dtype=np.float64)
     O = np.zeros_like(t, dtype='float64')
     v_sq = v*v
     O_new(O, v_sq, M, K)
     ff = fourier_force(g, O[0], ampl=amplitude, freq=freq, phase=phase, step_time=t[1] - t[0])
-    absFp = np.abs(ff * np.sqrt(2 * pi))  #
-    argFp = np.angle(ff * np.sqrt(2 * pi))
-    _calc_U_analityc_(U, O, v_sq, M, K, absFp, argFp,  t.shape[0], t, force, freq, g)
+    absFp = np.abs(ff)  #
+    argFp = np.angle(ff )
+    _calc_U_analityc_(U, O, v_sq, M, K, absFp, argFp,  t.shape[0], t, force, freq, g, syst)
     print(f'U_a = {U}')
     return U
 
@@ -822,41 +914,37 @@ def calc_U_analityc(t: np.ndarray, K: float, M: float, v: np.ndarray,
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef void _calc_U_analityc_(double[:] U, double [:] omega, double[:] v_sq, double M, double K, double absFp,
-                            double argFp, int t_len, double[:] t, double[:] p, double freq, double g):
+                            double argFp, int t_len, double[:] t, double[:] p, double freq, double g,
+                            SystemUnderStudy syst):
     pass
     cdef:
         int i
-    if M!=0:
-        #C = sqrt(
-        #    sqrt(1-v_sq[0]-omega[0]**2)/
-        #    omega[0]*( 1+M*sqrt(1-v_sq[0]-omega[0]**2) )
-        #)
-        C = sqrt(sqrt(1. - v_sq[0] - omega[0] * omega[0]) / (
+    C = sqrt(sqrt(1. - v_sq[0] - omega[0] * omega[0]) / (
                     omega[0] * (1. + M * sqrt(1. - v_sq[0] - omega[0] * omega[0]))))
-        #C=(sqrt(1-v_sq[0]-omega[0]*omega[0])/(omega[0]*(1+M*sqrt(1-v_sq[0]-omega[0]*omega[0]))))\
-        #  /sqrt((M*omega[0]*omega[0]-K)/(omega[0]*(M*M*omega[0]*omega[0]-K*M+2)))
-    else:
-        C=sqrt(    2*(1-v_sq[0]-omega[0]**2)/(fabs(K)*omega[0])    )
-    C = C*absFp
+    C = C*absFp#/omega[0]
     for i in range(t_len):
         if M!=0:
             integ=integral(omega, i, t[i]-t[i-1])
         else:
             integ=integral_O_M_eq_0(sqrt(v_sq[0]),t[i], sqrt(v_sq[i]),sqrt(v_sq[i-1]), i, t[i+1]-t[i],K)
-        U[i] = _step_time_U_(p[i], v_sq[i], K, M, omega[i], integ, argFp, C, freq, t[i], g)
+        U[i] = _step_time_U_(p[i], v_sq[i], K, M, omega[i], integ, argFp, C, freq, t[i], g, syst)
 
 
 
 cdef double _step_time_U_(double p, double v_sq, double K, double M, double omega, double integ, double argFp,
-                          double C, double freq, double t, double g)nogil:
+                          double C, double freq, double t, double g, SystemUnderStudy syst)nogil:
     cdef double term_1, term_2, multiplier_1, multiplier_2
-    #term_1 = p/(2*sqrt(1-v_sq)+K)#-1/(2*sqrt(fabs(1-v_sq-freq**2))+K-M*freq*freq))*cos(freq*t)/2
-    term_1 = (p-g)/(2*sqrt(fabs(1-v_sq-freq**2))+K-M*freq*freq)
-    term_1 += g/(2*sqrt(1-v_sq)+K)
-    #term_1 = p*(M*omega*omega-K)/sqrt(1-v_sq-omega*omega)
+    #term_1 = p/(2*sqrt(fabs(1-v_sq-syst.freq**2))-syst.K+syst.M*syst.freq**2)#-1/(2*sqrt(fabs(1-v_sq-freq**2))+K-M*freq*freq))*cos(freq*t)/2
+    term_1 = 0.
+    if fabs(syst.freq)<=sqrt(1-v_sq):
+        term_1 = syst.ampl*cos(syst.freq*t)/(2*sqrt(fabs(1-v_sq-syst.freq**2))+syst.K-syst.M*syst.freq**2)#(syst.ext_force(t)-g) #(p-syst.g)
+    else:
+        term_1 = -syst.ampl*cos(syst.freq*t)/(2*sqrt(fabs(1-v_sq-syst.freq**2))-syst.K+syst.M*syst.freq**2)#(syst.ext_force(t)-g) #(p-syst.g)
+    term_1 += syst.g/(2*sqrt(1-v_sq)+syst.K)
+    #term_1 = p/(2*sqrt(1-v_sq)+syst.K)
     multiplier_1 = sqrt(
         sqrt(1-v_sq-omega**2)/
-        (omega+M*omega*sqrt(1-v_sq-omega**2))
+        (omega*(1+M*sqrt(1-v_sq-omega**2)))
     )
     multiplier_2 = sin(integ - argFp)
     term_2 = C*multiplier_1*multiplier_2
@@ -891,13 +979,14 @@ cdef void _calc_U_(double [:] U, long double [:]t, double K,double M,double [:] 
         for i in prange(2,len_t, nogil=True):
             if (i % l) == 0:
                 printf('#')
-            x_i = integral_c(v[i], v[i - 1], v[0], t[i], t[i - 1])
+            #x_i = integral_c(v[i], v[i - 1], v[0], t[i], t[i - 1])
+            x_i = integral_0(v, i, t)
             for j in range(1, i):
                 x_j = integral_0(v, j, t)
                 ko = (t[i] - t[j]) ** 2 - (x_i - x_j) ** 2
                 J1 = P[j] * csc.j0(sqrt(ko)) * h / 4
-                #x_j = integral_0(v, j - 1, t)
-                x_j = integral_c(v[j], v[j - 1], v[0], t[j], t[j - 1])
+                x_j = integral_0(v, j - 1, t)
+                #x_j = integral_c(v[j], v[j - 1], v[0], t[j], t[j - 1])
                 ko = (t[i] - t[j - 1]) ** 2 - (x_i - x_j) ** 2
                 J2 = P[j - 1] * csc.j0(sqrt(ko)) * h / 4
                 U[i] += J1 + J2
@@ -911,14 +1000,14 @@ cdef void _calc_U_(double [:] U, long double [:]t, double K,double M,double [:] 
         for i in prange(2,len_t, nogil=True):
             if (i % l) == 0:
                 printf('#')
-            #x_i = integral_0(v, i, t)
-            x_i = integral_c(v[i],v[i-1], v[0], t[i], t[i-1])
+            x_i = integral_0(v, i, t)
+            #x_i = integral_c(v[i],v[i-1], v[0], t[i], t[i-1])
             for j in range(1,i):
                 x_j = integral_0(v, j, t)
                 ko = (t[i] - t[j]) ** 2 - (x_i - x_j) ** 2
                 J1 = P[j] * csc.j0(sqrt(ko)) * h / 4
-                #x_j = integral_0(v, j - 1, t)
-                x_j = integral_c(v[j],v[j-1], v[0], t[j], t[j-1])
+                x_j = integral_0(v, j - 1, t)
+                #x_j = integral_c(v[j],v[j-1], v[0], t[j], t[j-1])
                 ko = (t[i] - t[j - 1]) ** 2 - (x_i - x_j) ** 2
                 J2 = P[j - 1] * csc.j0(sqrt(ko)) * h / 4
                 U[i] += J1 + J2
@@ -933,7 +1022,7 @@ cdef void _calc_U_(double [:] U, long double [:]t, double K,double M,double [:] 
         for i in prange(0,len_t, nogil=True):
             if (i%l)==0:
                 printf('#')
-            U[i]=P[i]-p[i]/(-K)
+            U[i]+=(P[i]-p[i])/(-K)
     else:
         printf('\n Error! Failed parametrs! Func _calc_U: \n K= %f, M=%f ; \n', K, M)
     printf('##\n')
